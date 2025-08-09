@@ -21,9 +21,9 @@ async def get_notices(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     include_expired: bool = Query(False),
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    db: Session = Depends(get_db)
 ):
+    # This endpoint is now public - no authentication required
     query = db.query(Notice).filter(Notice.is_active == True)
     
     # Filter by expiration
@@ -84,9 +84,9 @@ async def create_notice(
 @router.get("/{notice_id}", response_model=NoticeSchema)
 async def get_notice(
     notice_id: int,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    db: Session = Depends(get_db)
 ):
+    # This endpoint is now public - no authentication required
     notice = db.query(Notice).filter(Notice.id == notice_id).first()
     if not notice:
         raise HTTPException(status_code=404, detail="Notice not found")
@@ -131,13 +131,14 @@ async def delete_notice(
     db.commit()
     return {"message": "Notice deleted successfully"}
 
-@router.get("/categories/subcategories")
+@router.get("/subcategories", response_model=list[str])
 async def get_subcategories(
     category: str = Query(..., regex="^(main|club|department)$"),
     db: Session = Depends(get_db)
 ):
+    # This endpoint is now public - no authentication required
     subcategories = db.query(Notice.subcategory).filter(
         and_(Notice.category == category, Notice.subcategory.isnot(None))
     ).distinct().all()
     
-    return {"subcategories": [sub[0] for sub in subcategories if sub[0]]}
+    return [sub[0] for sub in subcategories if sub[0]]
