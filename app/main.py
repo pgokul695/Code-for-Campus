@@ -23,9 +23,18 @@ app = FastAPI(
 )
 
 # Set up CORS
+origins = settings.BACKEND_CORS_ORIGINS
+if not origins:
+    origins = []
+
+# Convert string to list if it's a string (for Railway environment variables)
+if isinstance(origins, str):
+    origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=origins,
+    allow_origin_regex=r'https?://(localhost|code-for-campus.*\.vercel\.app|code-for-campus.*\.railway\.app)',
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
