@@ -39,7 +39,7 @@ if production_url not in origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r'https?://(localhost|code-for-campus.*\.vercel\.app|code-for-campu
+    allow_origin_regex=r'https?://(localhost|code-for-campus.*\.vercel\.app|code-for-campus'
     allow_credentials=True,s.*\.railway\.app|code-for-campus-fe-production\.up\.railway\.app)',
     allow_methods=["*"],
     allow_headers=["*"],
