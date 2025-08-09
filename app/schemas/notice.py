@@ -5,7 +5,7 @@ from datetime import datetime
 class NoticeBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1)
-    category: str = Field(..., regex="^(main|club|department)$")
+    category: str = Field(..., pattern="^(main|club|department)$")
     subcategory: Optional[str] = Field(None, max_length=100)
     priority: Optional[int] = Field(0, ge=0, le=10)
     expires_at: Optional[datetime] = None
@@ -16,7 +16,7 @@ class NoticeCreate(NoticeBase):
 class NoticeUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     content: Optional[str] = Field(None, min_length=1)
-    category: Optional[str] = Field(None, regex="^(main|club|department)$")
+    category: Optional[str] = Field(None, pattern="^(main|club|department)$")
     subcategory: Optional[str] = Field(None, max_length=100)
     priority: Optional[int] = Field(None, ge=0, le=10)
     is_active: Optional[bool] = None
