@@ -31,11 +31,16 @@ if not origins:
 if isinstance(origins, str):
     origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
 
+# Add production frontend URL to allowed origins
+production_url = "https://code-for-campus-fe-production.up.railway.app"
+if production_url not in origins:
+    origins.append(production_url)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r'https?://(localhost|code-for-campus.*\.vercel\.app|code-for-campus.*\.railway\.app)',
-    allow_credentials=True,
+    allow_origin_regex=r'https?://(localhost|code-for-campus.*\.vercel\.app|code-for-campu
+    allow_credentials=True,s.*\.railway\.app|code-for-campus-fe-production\.up\.railway\.app)',
     allow_methods=["*"],
     allow_headers=["*"],
 )
