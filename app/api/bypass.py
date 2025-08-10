@@ -1,155 +1,211 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Save, Loader2, ArrowLeft } from 'lucide-react';
+# bypass_simple.py - Minimal version with no external dependencies
+# ⚠️ REMOVE THIS FILE AFTER TESTING! ⚠️
 
-const CreateNoticePage = () => {
-  const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    category: 'main',
-    subcategory: '',
-    priority: 'medium', // Form value, mapped to number later
-  });
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from datetime import datetime
+import os
+import hashlib
 
-  // Your bypass secret key — must match backend BYPASS_SECRET
-  const DEV_SECRET_KEY = "eNQLU0WqH37?"; // Change if different
+from ..database import get_db
+from ..models.user import User
+from ..models.notice import Notice  # <-- Ensure Notice model exists
 
-  const handleChange = (e) => {
-    const { id, value } = e.target;
-    setFormData(prev => ({ ...prev, [id]: value }));
-    if (id === 'category') {
-      setFormData(prev => ({ ...prev, subcategory: '' }));
+router = APIRouter(prefix="/bypass", tags=["bypass"])
+
+# --- Security Configuration ---
+BYPASS_SECRET = os.getenv("BYPASS_SECRET", "railway-dev-bypass-2024")
+
+# --- Reusable Dependency for Authentication ---
+def verify_bypass_access(secret: str = Query(..., description="The bypass secret key")):
+    """
+    FastAPI dependency to verify bypass access with a secret from query parameters.
+    Raises HTTPException if the secret is invalid.
+    """
+    if secret != BYPASS_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid bypass secret"
+        )
+
+# --- Pydantic Models for Request Bodies ---
+class PromoteUserPayload(BaseModel):
+    user_id: int
+    new_role: str
+
+class CreateNoticePayload(BaseModel):
+    title: str
+    content: str
+    category: str
+    subcategory: str
+    priority: int
+    expires_at: datetime
+
+# --- API Endpoints ---
+
+@router.post("/instant-admin")
+async def instant_admin_access(
+    email: str = Query(..., description="Email of the user to create or promote to admin"),
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access)
+):
+    """
+    🚨 RAILWAY BYPASS: Instantly become admin (Simple Version)
+    """
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        user = User(
+            email=email,
+            name=f"Admin User ({email})",
+            role="admin",
+            firebase_uid=f"bypass_{hashlib.md5(email.encode()).hexdigest()}",
+            is_verified=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(user)
+        action = "created"
+    else:
+        user.role = "admin"
+        user.updated_at = datetime.utcnow()
+        action = "promoted"
+    
+    db.commit()
+    db.refresh(user)
+    
+    return {
+        "message": f"User {action} as admin successfully",
+        "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role},
+        "next_steps": [
+            "1. Use your regular login method (e.g., Firebase) to get a JWT token",
+            "2. Your account now has the 'admin' role",
+            "3. Access admin endpoints with your authenticated session"
+        ]
     }
-  };
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.title.trim()) newErrors.title = 'Title is required';
-    if (!formData.content.trim()) newErrors.content = 'Content is required';
-    if (formData.category !== 'main' && !formData.subcategory) {
-      newErrors.subcategory = 'Please select a subcategory';
+@router.post("/promote-user")
+async def promote_existing_user(
+    payload: PromoteUserPayload,
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access)
+):
+    """
+    🚨 BYPASS: Promote any existing user to any role
+    """
+    if payload.new_role not in ["student", "faculty", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be 'student', 'faculty', or 'admin'"
+        )
+    
+    user = db.query(User).filter(User.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {payload.user_id} not found"
+        )
+    
+    old_role = user.role
+    user.role = payload.new_role
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    
+    return {
+        "message": f"User promoted from '{old_role}' to '{payload.new_role}'",
+        "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
-
-    setLoading(true);
-    setErrors({});
-
-    const priorityMap = { high: 3, medium: 2, low: 1 };
-
-    const payload = {
-      title: formData.title,
-      content: formData.content,
-      category: formData.category,
-      subcategory: formData.category !== 'main' ? formData.subcategory : null,
-      priority: priorityMap[formData.priority] || 0,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Default 7-day expiry
-    };
-
-    try {
-      const res = await fetch(`/api/v1/bypass/notices?secret=${encodeURIComponent(DEV_SECRET_KEY)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
-
-      await res.json();
-      navigate('/notices');
-    } catch (err) {
-      console.error(err);
-      setErrors({ form: 'Failed to create the notice. Please try again.' });
-    } finally {
-      setLoading(false);
+@router.get("/list-users")
+async def list_users(
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access)
+):
+    """
+    🚨 BYPASS: List all users to find IDs for promotion.
+    """
+    users = db.query(User).all()
+    
+    return {
+        "total_users": len(users),
+        "users": [
+            {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "created_at": user.created_at
+            }
+            for user in users
+        ]
     }
-  };
 
-  const getSubcategoryOptions = () => {
-    if (formData.category === 'department') return ['CSE', 'ECE', 'ME', 'CE'];
-    if (formData.category === 'club') return ['Music', 'Dance', 'Coding', 'Drama'];
-    return [];
-  };
+@router.post("/notices", summary="Create Notice")
+async def create_notice(
+    payload: CreateNoticePayload,
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access)
+):
+    """
+    🚨 BYPASS: Create a new notice (no JWT required for testing)
+    """
+    notice = Notice(
+        title=payload.title,
+        content=payload.content,
+        category=payload.category,
+        subcategory=payload.subcategory,
+        priority=payload.priority,
+        expires_at=payload.expires_at,
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        author_uid="bypass_admin",
+        author_name="Bypass Admin"
+    )
 
-  return (
-    <div className="create-notice-container">
-      <div className="create-notice-header">
-        <button onClick={() => navigate(-1)} className="back-button">
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
-        <h1>Create New Notice</h1>
-        <p>Fill out the form below to publish a new notice to the board.</p>
-      </div>
+    db.add(notice)
+    db.commit()
+    db.refresh(notice)
 
-      <form onSubmit={handleSubmit} className="notice-editor-form">
-        {errors.form && <div className="error-message-auth">{errors.form}</div>}
-        
-        <div className="form-field">
-          <label htmlFor="title">Title *</label>
-          <input type="text" id="title" value={formData.title} onChange={handleChange} className={errors.title ? 'error' : ''} placeholder="Enter notice title" disabled={loading} />
-          {errors.title && <p className="error-message">{errors.title}</p>}
-        </div>
+    return {
+        "id": notice.id,
+        "author_uid": notice.author_uid,
+        "author_name": notice.author_name,
+        "is_active": notice.is_active,
+        "created_at": notice.created_at,
+        "updated_at": notice.updated_at,
+        "title": notice.title,
+        "content": notice.content,
+        "category": notice.category,
+        "subcategory": notice.subcategory,
+        "priority": notice.priority,
+        "expires_at": notice.expires_at
+    }
 
-        <div className="form-field">
-          <label htmlFor="content">Content *</label>
-          <textarea id="content" value={formData.content} onChange={handleChange} rows={10} className={errors.content ? 'error' : ''} placeholder="Enter notice content..." disabled={loading} />
-          {errors.content && <p className="error-message">{errors.content}</p>}
-        </div>
-
-        <div className="form-grid">
-          <div className="form-field">
-            <label htmlFor="category">Category *</label>
-            <select id="category" value={formData.category} onChange={handleChange} disabled={loading}>
-              <option value="main">Main Notice</option>
-              <option value="department">Department</option>
-              <option value="club">Club</option>
-            </select>
-          </div>
-
-          {formData.category !== 'main' && (
-            <div className="form-field">
-              <label htmlFor="subcategory">{formData.category === 'department' ? 'Department' : 'Club'} *</label>
-              <select id="subcategory" value={formData.subcategory} onChange={handleChange} className={errors.subcategory ? 'error' : ''} disabled={loading || !getSubcategoryOptions().length}>
-                <option value="">Select...</option>
-                {getSubcategoryOptions().map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-              {errors.subcategory && <p className="error-message">{errors.subcategory}</p>}
-            </div>
-          )}
-
-          <div className="form-field">
-            <label htmlFor="priority">Priority</label>
-            <select id="priority" value={formData.priority} onChange={handleChange} disabled={loading}>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </div>
-        </div>
-        
-        <div className="notice-editor-actions">
-          <button type="button" onClick={() => navigate(-1)} className="btn btn-secondary" disabled={loading}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" /> : <Save />}
-            <span>Publish Notice</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-};
-
-export default CreateNoticePage;
+@router.delete("/self-destruct")
+async def self_destruct(
+    confirm: str = Query(..., description="Must be 'YES-DELETE-BYPASS' to confirm."),
+    _verified: None = Depends(verify_bypass_access)
+):
+    """
+    🧨 SELF DESTRUCT: Provides instructions to disable bypass routes.
+    """
+    if confirm != "YES-DELETE-BYPASS":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must confirm with 'YES-DELETE-BYPASS' in the confirm query parameter."
+        )
+    
+    return {
+        "message": "🧨 BYPASS SELF-DESTRUCT ACTIVATED",
+        "instructions": [
+            "1. Remove 'from .api import bypass_simple as bypass' from your main application file (e.g., main.py).",
+            "2. Remove 'app.include_router(bypass.router, prefix=\"/api/v1\")' from your main application file.",
+            "3. Delete this file: app/api/bypass_simple.py",
+            "4. Redeploy your application."
+        ],
+        "status": "Ready for manual removal."
+    }
