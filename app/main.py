@@ -55,10 +55,7 @@ app.add_middleware(
 app.include_router(notices.router, prefix=f"{settings.API_V1_STR}/notices", tags=["notices"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
-
-# Include development routes in non-production environments
-if os.getenv('ENVIRONMENT') != 'production':
-    app.include_router(dev.router, prefix=f"{settings.API_V1_STR}/dev", tags=["dev"])
+app.include_router(dev.router, prefix=f"{settings.API_V1_STR}/dev", tags=["dev"])
 
 @app.get("/")
 async def root():
