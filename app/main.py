@@ -1,11 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer
 from contextlib import asynccontextmanager
+import os
 
 from .config import settings
 from .core.firebase import initialize_firebase
 from .database import engine, Base
 from .api import notices, users, auth
+
+# Import development utilities
+if os.getenv('ENVIRONMENT') != 'production':
+    from .api import dev
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,11 +51,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Include routers
 app.include_router(notices.router, prefix=f"{settings.API_V1_STR}/notices", tags=["notices"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
+
+# Include development routes in non-production environments
+if os.getenv('ENVIRONMENT') != 'production':
+    app.include_router(dev.router, prefix=f"{settings.API_V1_STR}/dev", tags=["dev"])
 
 @app.get("/")
 async def root():
