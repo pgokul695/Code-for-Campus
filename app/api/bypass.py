@@ -1,7 +1,8 @@
 # bypass_simple.py - Minimal version with no external dependencies
 # ⚠️ REMOVE THIS FILE AFTER TESTING! ⚠️
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -12,46 +13,53 @@ from ..models.user import User
 
 router = APIRouter(prefix="/bypass", tags=["bypass"])
 
-# Security measures
+# --- Security Configuration ---
 BYPASS_SECRET = os.getenv("BYPASS_SECRET", "railway-dev-bypass-2024")
 
-def verify_bypass_access(request: Request, secret: str):
-    """Verify bypass access with secret"""
-    
-    # Check secret
+# --- Reusable Dependency for Authentication ---
+def verify_bypass_access(secret: str = Query(..., description="The bypass secret key")):
+    """
+    FastAPI dependency to verify bypass access with a secret from query parameters.
+    This runs for any endpoint that includes it in its dependencies.
+    Raises HTTPException if the secret is invalid.
+    """
     if secret != BYPASS_SECRET:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid bypass secret"
         )
-    
-    return True
+
+# --- Pydantic Models for Request Bodies ---
+class PromoteUserPayload(BaseModel):
+    user_id: int
+    new_role: str
+
+class SelfDestructPayload(BaseModel):
+    confirm: str
+
+
+# --- API Endpoints ---
 
 @router.post("/instant-admin")
 async def instant_admin_access(
-    email: str,
-    secret: str,
-    request: Request,
-    db: Session = Depends(get_db)
+    email: str = Query(..., description="Email of the user to create or promote to admin"),
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access) # Dependency handles secret verification
 ):
     """
     🚨 RAILWAY BYPASS: Instantly become admin (Simple Version)
     
-    This creates/promotes user to admin without JWT token generation
-    After this, use regular login flow to get tokens
+    This creates/promotes a user to admin without JWT token generation.
+    After this, use your regular login flow to get tokens for the user.
     
     Usage:
-    POST /api/v1/bypass/instant-admin
-    {
-        "email": "your-email@domain.com",
-        "secret": "your-bypass-secret"
-    }
+    POST /api/v1/bypass/instant-admin?email=your-email@domain.com&secret=your-bypass-secret
+    (Note: `email` and `secret` are query parameters)
     
     ⚠️ REMOVE THIS ENDPOINT AFTER SETUP! ⚠️
     """
-    verify_bypass_access(request, secret)
+    # The verify_bypass_access dependency has already validated the secret.
     
-    # Find or create user
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
@@ -78,148 +86,68 @@ async def instant_admin_access(
     
     return {
         "message": f"User {action} as admin successfully",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role
-        },
+        "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role},
         "next_steps": [
-            "1. Use your regular login method (Firebase) to get JWT token",
-            "2. Your account now has admin role",
+            "1. Use your regular login method (e.g., Firebase) to get a JWT token",
+            "2. Your account now has the 'admin' role",
             "3. Access admin endpoints with your authenticated session"
-        ]
-    }
-
-@router.post("/emergency-admin")
-async def emergency_admin(
-    request: Request,
-    secret: str,
-    db: Session = Depends(get_db)
-):
-    """
-    🚨 ULTIMATE BYPASS: Creates emergency admin without email requirement
-    
-    Creates admin user: emergency@railway.dev
-    Password: Use Firebase auth or your regular login flow
-    
-    Use this if you have no existing users!
-    """
-    verify_bypass_access(request, secret)
-    
-    emergency_email = "emergency@railway.dev"
-    
-    # Check if emergency admin already exists
-    existing = db.query(User).filter(User.email == emergency_email).first()
-    if existing and existing.role == "admin":
-        return {
-            "message": "Emergency admin already exists",
-            "user": {
-                "id": existing.id,
-                "email": existing.email,
-                "role": existing.role
-            },
-            "instructions": "Use regular login flow with this email to get admin access"
-        }
-    
-    # Create or promote emergency admin
-    if existing:
-        existing.role = "admin"
-        existing.updated_at = datetime.utcnow()
-        user = existing
-    else:
-        user = User(
-            email=emergency_email,
-            name="Emergency Admin",
-            role="admin",
-            firebase_uid="emergency_admin_railway",
-            is_verified=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        db.add(user)
-    
-    db.commit()
-    db.refresh(user)
-    
-    return {
-        "message": "Emergency admin created successfully",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role
-        },
-        "instructions": [
-            "1. Set up Firebase authentication for emergency@railway.dev",
-            "2. Login using your regular authentication flow", 
-            "3. You now have admin access",
-            "⚠️ Change this after setup! Delete this endpoint!"
         ]
     }
 
 @router.post("/promote-user")
 async def promote_existing_user(
-    user_id: int,
-    secret: str,
-    new_role: str,
-    request: Request,
-    db: Session = Depends(get_db)
+    payload: PromoteUserPayload,
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access) # Secret is still a query param
 ):
     """
     🚨 BYPASS: Promote any existing user to any role
     
     Usage:
-    POST /api/v1/bypass/promote-user
+    POST /api/v1/bypass/promote-user?secret=your-bypass-secret
+    
+    Request Body (JSON):
     {
         "user_id": 123,
-        "new_role": "admin",
-        "secret": "your-bypass-secret"
+        "new_role": "admin"
     }
     """
-    verify_bypass_access(request, secret)
-    
-    if new_role not in ["student", "faculty", "admin"]:
+    if payload.new_role not in ["student", "faculty", "admin"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role must be 'student', 'faculty', or 'admin'"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found"
+            detail=f"User with ID {payload.user_id} not found"
         )
     
     old_role = user.role
-    user.role = new_role
+    user.role = payload.new_role
     user.updated_at = datetime.utcnow()
     
     db.commit()
     db.refresh(user)
     
     return {
-        "message": f"User promoted from '{old_role}' to '{new_role}'",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role
-        }
+        "message": f"User promoted from '{old_role}' to '{payload.new_role}'",
+        "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
     }
 
 @router.get("/list-users")
 async def list_users(
-    secret: str,
-    request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _verified: None = Depends(verify_bypass_access)
 ):
     """
-    🚨 BYPASS: List all users to find IDs
-    """
-    verify_bypass_access(request, secret)
+    🚨 BYPASS: List all users to find IDs for promotion.
     
+    Usage:
+    GET /api/v1/bypass/list-users?secret=your-bypass-secret
+    """
     users = db.query(User).all()
     
     return {
@@ -236,46 +164,33 @@ async def list_users(
         ]
     }
 
-@router.get("/status")
-async def bypass_status(request: Request):
-    """Check if bypass routes are active"""
-    return {
-        "status": "🚨 SIMPLE BYPASS ROUTES ACTIVE 🚨",
-        "warning": "These routes should be removed in production!",
-        "your_ip": request.client.host,
-        "endpoints": [
-            "POST /bypass/instant-admin",
-            "POST /bypass/emergency-admin",
-            "POST /bypass/promote-user",
-            "GET /bypass/list-users"
-        ],
-        "note": "This version doesn't generate JWT tokens - use regular login after promotion"
-    }
-
 @router.delete("/self-destruct")
 async def self_destruct(
-    secret: str,
-    confirm: str,
-    request: Request
+    confirm: str = Query(..., description="Must be 'YES-DELETE-BYPASS' to confirm."),
+    _verified: None = Depends(verify_bypass_access)
 ):
     """
-    🧨 SELF DESTRUCT: Disable bypass routes
-    """
-    verify_bypass_access(request, secret)
+    🧨 SELF DESTRUCT: Provides instructions to disable bypass routes.
     
+    Usage:
+    DELETE /api/v1/bypass/self-destruct?secret=your-bypass-secret&confirm=YES-DELETE-BYPASS
+    """
     if confirm != "YES-DELETE-BYPASS":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must confirm with 'YES-DELETE-BYPASS'"
+            detail="Must confirm with 'YES-DELETE-BYPASS' in the confirm query parameter."
         )
     
     return {
         "message": "🧨 BYPASS SELF-DESTRUCT ACTIVATED",
         "instructions": [
-            "1. Remove 'from .api import bypass' from main.py",
-            "2. Remove 'app.include_router(bypass.router, prefix=\"/api/v1\")' from main.py", 
-            "3. Delete app/api/bypass.py file",
-            "4. Redeploy your application"
+            "1. Remove 'from .api import bypass_simple as bypass' from your main application file (e.g., main.py).",
+            "2. Remove 'app.include_router(bypass.router, prefix=\"/api/v1\")' from your main application file.",
+            "3. Delete this file: app/api/bypass_simple.py",
+            "4. Redeploy your application."
         ],
-        "status": "Ready for removal"
+        "status": "Ready for manual removal."
     }
+    
+# Note: The /emergency-admin and /status endpoints from your original file can be added here
+# following the same dependency injection pattern if you still need them.
