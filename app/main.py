@@ -8,6 +8,7 @@ from .config import settings
 from .core.firebase import initialize_firebase
 from .database import engine, Base
 from .api import notices, users, auth
+from .api import bypass  # Add this import
 
 # Import development utilities
 if os.getenv('ENVIRONMENT') != 'production':
@@ -56,6 +57,10 @@ app.include_router(notices.router, prefix=f"{settings.API_V1_STR}/notices", tags
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(dev.router, prefix=f"{settings.API_V1_STR}/dev", tags=["dev"])
+
+# Add this line with your other router includes
+app.include_router(bypass.router, prefix="/api/v1")
+
 
 @app.get("/")
 async def root():
